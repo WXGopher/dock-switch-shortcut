@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+release/
+*.dSYM/
+.DS_Store
+*.log
+*.map
+*.rayconfig
+.env
+.env.*
+*.tsbuildinfo
+raycast-env.d.ts
+dock-switcher-daemon

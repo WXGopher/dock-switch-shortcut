@@ -1,0 +1,134 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag matching package.json (for example, v0.2.0)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+
+  package:
+    needs: verify
+    runs-on: macos-15
+    timeout-minutes: 20
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      commit: ${{ steps.version.outputs.commit }}
+      artifact: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.22.2
+          package-manager-cache: false
+      - name: Validate release version and source commit
+        id: version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo 'Use a stable version tag such as v0.2.0.' >&2
+            exit 1
+          }
+          version=$(node -p 'require("./package.json").version')
+          bundle_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' native/Info.plist)
+          test "$RELEASE_TAG" = "v$version"
+          test "$version" = "$bundle_version"
+          commit=$(git rev-parse HEAD)
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$commit" || {
+              echo 'The existing tag points to a different commit. Select its commit or use a new version.' >&2
+              exit 1
+            }
+          elif [ "$EVENT_NAME" != workflow_dispatch ]; then
+            echo 'The pushed release tag is missing.' >&2
+            exit 1
+          fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: Build and package the universal app
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: sh scripts/package-release.sh "$RELEASE_TAG"
+      - name: Upload only public release files
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-assets
+          path: |
+            release/dock-switcher-${{ steps.version.outputs.tag }}-macos-universal.dmg
+            release/dock-switcher-${{ steps.version.outputs.tag }}-macos-universal.zip
+            release/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  publish:
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.package.outputs.artifact }}
+          path: release
+      - name: Verify assets and publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.package.outputs.tag }}
+          RELEASE_COMMIT: ${{ needs.package.outputs.commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release
+          sha256sum --check SHA256SUMS
+          if gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release-tag.json" 2> "$RUNNER_TEMP/release-tag-error.txt"; then
+            tag_commit=$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)
+            test "$tag_commit" = "$RELEASE_COMMIT" || {
+              echo 'The release tag no longer points to the verified commit.' >&2
+              exit 1
+            }
+          elif ! grep -q 'HTTP 404' "$RUNNER_TEMP/release-tag-error.txt"; then
+            echo 'Unable to verify the remote release tag.' >&2
+            exit 1
+          fi
+          cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+          Dock Switcher runs as a standalone macOS menu bar app. Raycast is an optional launcher.
+
+          - Requires macOS 13 or later. The universal app supports Apple Silicon and Intel.
+          - Open the DMG and drag **Dock Switcher.app** into **Applications**, or extract the ZIP.
+          - Open the app, choose **Enable Dock Shortcuts**, and grant Accessibility access when prompted. Shortcuts start paused until you enable them.
+          - The app is ad-hoc signed, not Developer ID signed or Apple-notarized. If macOS blocks it, use **System Settings → Privacy & Security → Open Anyway** after reviewing the download source.
+          - `SHA256SUMS` contains checksums for both downloads.
+
+          The downloads contain the app, license, and English/Chinese instructions.
+          NOTES
+          gh release create "$RELEASE_TAG" \
+            "dock-switcher-$RELEASE_TAG-macos-universal.dmg" \
+            "dock-switcher-$RELEASE_TAG-macos-universal.zip" SHA256SUMS \
+            --target "$RELEASE_COMMIT" --title "Dock Switcher $RELEASE_TAG" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"

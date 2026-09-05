@@ -1,0 +1,69 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "dock-switcher",
+  "title": "Dock Switcher",
+  "description": "Optional Raycast launcher for the standalone Dock Switcher macOS app",
+  "icon": "command-icon.png",
+  "author": "WXGopher",
+  "categories": [
+    "System"
+  ],
+  "license": "GPL-3.0-only",
+  "commands": [
+    {
+      "name": "setup",
+      "title": "Enable Dock Shortcuts",
+      "description": "Ask Dock Switcher to enable ⌘1-⌘0 shortcuts",
+      "mode": "no-view"
+    },
+    {
+      "name": "stop",
+      "title": "Disable Dock Shortcuts",
+      "description": "Ask Dock Switcher to pause shortcuts while keeping the app open",
+      "mode": "no-view"
+    },
+    {
+      "name": "show-mapping",
+      "title": "Show Dock Mapping",
+      "description": "Open the shortcut mapping in the Dock Switcher menu bar app",
+      "mode": "no-view"
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^1.85.0"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^1.0.11",
+    "@types/node": "22.13.4",
+    "@types/react": "19.0.8",
+    "eslint": "^8.57.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3"
+  },
+  "scripts": {
+    "build": "ray build -e dist -o dist",
+    "dev": "ray develop",
+    "lint": "eslint src --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit",
+    "check:swift": "sh scripts/check-swift.sh",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs"
+  },
+  "version": "0.2.0",
+  "private": true,
+  "platforms": [
+    "macOS"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WXGopher/dock-switch-shortcut.git"
+  },
+  "homepage": "https://github.com/WXGopher/dock-switch-shortcut#readme",
+  "bugs": {
+    "url": "https://github.com/WXGopher/dock-switch-shortcut/issues"
+  },
+  "engines": {
+    "node": ">=22.22.2"
+  }
+}
