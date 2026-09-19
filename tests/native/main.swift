@@ -21,6 +21,54 @@ func tile(_ name: String, _ bundleID: String, url: String = "file:///Application
     ["tile-data": ["file-label": name, "bundle-identifier": bundleID, "file-data": ["_CFURLString": url]]]
 }
 
+func withTemporaryDockPreferences(_ body: (CFString, ([String: Any]) throws -> Void) throws -> Void) throws {
+    let domain = "io.github.wxgopher.DockSwitcher.tests.\(UUID().uuidString)"
+    let fixture = FileManager.default.temporaryDirectory.appendingPathComponent("\(domain).plist")
+    defer {
+        CFPreferencesSetValue("persistent-apps" as CFString, nil, domain as CFString, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        CFPreferencesSynchronize(domain as CFString, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        try? FileManager.default.removeItem(at: fixture)
+    }
+    try body(domain as CFString) { preferences in
+        let data = try PropertyListSerialization.data(fromPropertyList: preferences, format: .xml, options: 0)
+        try data.write(to: fixture)
+        // A separate process simulates Dock updating preferences while the reader stays alive.
+        let result = try runTool("/usr/bin/defaults", ["import", domain, fixture.path])
+        try expect(result.status == 0, "Could not write isolated Dock fixture")
+    }
+}
+
+check("A running reader sees external Dock additions, reordering, and removals") {
+    try withTemporaryDockPreferences { domain, write in
+        try write(["persistent-apps": [tile("Safari", "com.apple.Safari"), tile("Terminal", "com.apple.Terminal")]])
+        var apps = try DockModel.read(includeRunningApps: false, applicationID: domain)
+        try expect(apps.map(\.name) == ["Safari", "Terminal"], "Initial mapping is incorrect")
+
+        try write(["persistent-apps": [tile("Terminal", "com.apple.Terminal"), tile("Preview", "com.apple.Preview"), tile("Safari", "com.apple.Safari")]])
+        apps = try DockModel.read(applicationID: domain)
+        try expect(apps.map(\.name) == ["Terminal", "Preview", "Safari"], "Mapping kept an outdated order or missed a new app")
+
+        try write(["persistent-apps": [tile("Preview", "com.apple.Preview")]])
+        apps = try DockModel.read(applicationID: domain)
+        try expect(apps.map(\.name) == ["Preview"], "Removed apps remain mapped")
+
+        try write(["persistent-apps": []])
+        apps = try DockModel.read(applicationID: domain)
+        try expect(apps.isEmpty, "An empty Dock kept the previous mapping")
+    }
+}
+
+check("Missing Dock preferences are empty; unreadable app lists report failure") {
+    try withTemporaryDockPreferences { domain, write in
+        let apps = try DockModel.read(applicationID: domain)
+        try expect(apps.isEmpty, "A missing Dock list should be empty")
+        try write(["persistent-apps": "invalid"])
+        var failed = false
+        do { _ = try DockModel.read(applicationID: domain) } catch { failed = true }
+        try expect(failed, "An unreadable Dock list was silently shown as an empty mapping")
+    }
+}
+
 check("Dock mapping preserves order and excludes Finder, spacers, and recent apps") {
     let preferences: [String: Any] = [
         "persistent-apps": [
@@ -33,6 +81,49 @@ check("Dock mapping preserves order and excludes Finder, spacers, and recent app
         "recent-apps": [tile("Preview", "com.apple.Preview")],
     ]
     try expect(DockModel.apps(from: preferences).map(\.name) == ["Safari", "Terminal"], "Incorrect mapping order")
+}
+
+check("Running mode follows visible Dock order and keeps closed pinned apps") {
+    let safari = DockApp(name: "Safari", bundleID: "com.apple.Safari", url: nil)
+    let terminal = DockApp(name: "Terminal", bundleID: "com.apple.Terminal", url: nil)
+    let editor = DockApp(name: "Editor", bundleID: "example.editor", url: nil)
+    let preview = DockApp(name: "Preview", bundleID: "com.apple.Preview", url: nil)
+    let items = [
+        DockItem(app: terminal, isRunning: false),
+        DockItem(app: editor, isRunning: true),
+        DockItem(app: preview, isRunning: false),
+        DockItem(app: safari, isRunning: true),
+    ]
+    let apps = DockModel.apps(from: items, pinnedApps: [safari, terminal])
+    try expect(apps == [terminal, editor, safari], "Visible order, closed pinned apps, or recent-app filtering is incorrect")
+}
+
+check("Running mode excludes Finder and maps each eligible bundle only once") {
+    let finder = DockApp(name: "Renamed Finder", bundleID: "com.apple.finder", url: nil)
+    let editor = DockApp(name: "Editor", bundleID: "example.editor", url: nil)
+    let duplicate = DockApp(name: "Editor Copy", bundleID: editor.bundleID, url: nil)
+    let terminal = DockApp(name: "Terminal", bundleID: "com.apple.Terminal", url: nil)
+    let items = [
+        DockItem(app: finder, isRunning: true),
+        DockItem(app: duplicate, isRunning: false),
+        DockItem(app: editor, isRunning: true),
+        DockItem(app: terminal, isRunning: false),
+        DockItem(app: duplicate, isRunning: true),
+        DockItem(app: terminal, isRunning: true),
+    ]
+    let apps = DockModel.apps(from: items, pinnedApps: [finder, terminal])
+    try expect(apps == [editor, terminal], "Finder or duplicate bundles shifted the mapping")
+}
+
+check("Running mode reflects reordering and drops unpinned apps after they quit") {
+    let pinned = DockApp(name: "Pinned", bundleID: "example.pinned", url: nil)
+    let running = DockApp(name: "Running", bundleID: "example.running", url: nil)
+    let initial = [DockItem(app: pinned, isRunning: false), DockItem(app: running, isRunning: true)]
+    let reordered = [initial[1], initial[0]]
+    let afterQuit = [DockItem(app: running, isRunning: false), initial[0]]
+    try expect(DockModel.apps(from: initial, pinnedApps: [pinned]) == [pinned, running], "Initial running mapping is incorrect")
+    try expect(DockModel.apps(from: reordered, pinnedApps: [pinned]) == [running, pinned], "Running-app reordering was ignored")
+    try expect(DockModel.apps(from: afterQuit, pinnedApps: [pinned]) == [pinned], "A closed unpinned app remained mapped")
 }
 
 check("Special characters and missing icon URLs do not shift mapping") {

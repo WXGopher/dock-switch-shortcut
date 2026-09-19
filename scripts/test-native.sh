@@ -7,6 +7,7 @@ trap 'rm -rf "$test_dir"' EXIT
 
 xcrun swiftc -swift-version 5 \
   "$repo_dir/native/DockModel.swift" \
+  "$repo_dir/native/DockAccessibility.swift" \
   "$repo_dir/native/LegacyHelper.swift" \
   "$repo_dir/tests/native/main.swift" \
   -framework Cocoa -o "$test_dir/native-tests"

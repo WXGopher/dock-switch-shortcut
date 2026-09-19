@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let menu = NSMenu()
     private var mappingMenu = NSMenu()
     private var lastError: String?
+    private var mappingError: String?
     private var handlingURL = false
     private var didLaunch = false
     private var pendingURLs: [URL] = []
@@ -23,6 +24,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         set { preferences.set(newValue, forKey: "allowRaycastControl") }
     }
 
+    private var includesRunningApps: Bool {
+        get { preferences.bool(forKey: "includeRunningApps") }
+        set {
+            preferences.set(newValue, forKey: "includeRunningApps")
+            engine.includeRunningApps = newValue
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -33,6 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         statusItem.menu = menu
         engine.onFailure = { [weak self] message in self?.lastError = message }
+        engine.onMappingFailure = { [weak self] message in self?.mappingError = message }
+        engine.includeRunningApps = includesRunningApps
         restoreShortcuts()
         rebuildMenu()
         didLaunch = true
@@ -86,22 +97,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func rebuildMenu() {
         menu.removeAllItems()
+        rebuildMapping()
         addItem("Dock Switcher")
         addItem(engine.isRunning ? "Shortcuts are on" : "Shortcuts are paused")
-        if enabled && !AXIsProcessTrusted() { addItem("Accessibility permission needed") }
-        if let lastError {
+        if (enabled || includesRunningApps) && !AXIsProcessTrusted() { addItem("Accessibility permission needed") }
+        if let error = mappingError ?? lastError {
             let item = NSMenuItem(title: "View Last Error…", action: #selector(showLastError), keyEquivalent: "")
             item.target = self
-            item.toolTip = lastError
+            item.toolTip = error
             menu.addItem(item)
         }
         menu.addItem(.separator())
         addItem("Enable Dock Shortcuts", action: #selector(toggleShortcuts), checked: enabled)
 
-        rebuildMapping()
         let mapping = NSMenuItem(title: "Current Mapping", action: nil, keyEquivalent: "")
         mapping.submenu = mappingMenu
         menu.addItem(mapping)
+        addItem("Remap Dock Apps", action: #selector(remapDockApps))
+        menu.items.last?.toolTip = "Refresh and show shortcuts using the current Dock order and mapping setting."
+        addItem("Include Running Apps", action: #selector(toggleRunningApps), checked: includesRunningApps)
+        menu.items.last?.toolTip = "Also map unpinned running apps in Dock order. Requires Accessibility permission."
 
         menu.addItem(.separator())
         let loginStatus = SMAppService.mainApp.status
@@ -117,12 +132,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.button?.appearsDisabled = !engine.isRunning
     }
 
-    private func rebuildMapping() {
+    @discardableResult
+    private func rebuildMapping() -> Bool {
         mappingMenu = NSMenu(title: "Current Mapping")
+        mappingError = nil
         do {
-            let apps = Array(try DockModel.read().prefix(10))
+            let apps = Array(try DockModel.read(includeRunningApps: includesRunningApps).prefix(10))
             if apps.isEmpty {
-                mappingMenu.addItem(NSMenuItem(title: "Pin apps to your Dock to get started", action: nil, keyEquivalent: ""))
+                let title = includesRunningApps ? "Pin or open apps in your Dock to get started" : "Pin apps to your Dock to get started"
+                mappingMenu.addItem(NSMenuItem(title: title, action: nil, keyEquivalent: ""))
             }
             for (index, app) in apps.enumerated() {
                 let item = NSMenuItem(title: "\(DockShortcut.label(for: index))  \(app.name)", action: nil, keyEquivalent: "")
@@ -134,11 +152,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 mappingMenu.addItem(item)
             }
             mappingMenu.addItem(.separator())
-            mappingMenu.addItem(NSMenuItem(title: "Pinned apps · Finder skipped", action: nil, keyEquivalent: ""))
+            let scope = includesRunningApps ? "Pinned + running apps · Finder skipped" : "Pinned apps · Finder skipped"
+            mappingMenu.addItem(NSMenuItem(title: scope, action: nil, keyEquivalent: ""))
+            return true
         } catch {
-            mappingMenu.addItem(NSMenuItem(title: "Could not read Dock preferences", action: nil, keyEquivalent: ""))
-            lastError = error.localizedDescription
+            mappingMenu.addItem(NSMenuItem(title: "Could not refresh Dock mapping", action: nil, keyEquivalent: ""))
+            mappingError = error.localizedDescription
+            return false
         }
+    }
+
+    @objc private func remapDockApps() {
+        guard rebuildMapping() else {
+            showLastError()
+            return
+        }
+        presentMapping()
+    }
+
+    @objc private func toggleRunningApps() {
+        includesRunningApps.toggle()
+        if includesRunningApps && !AXIsProcessTrusted() {
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+            _ = AXIsProcessTrustedWithOptions(options)
+        }
+        rebuildMenu()
+    }
+
+    private func presentMapping() {
+        NSApp.activate(ignoringOtherApps: true)
+        mappingMenu.popUp(positioning: nil, at: NSPoint(x: 0, y: 0), in: statusItem.button)
     }
 
     @objc private func toggleShortcuts() {
@@ -213,7 +256,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showLastError() {
-        if let lastError { showMessage("Dock Switcher", lastError) }
+        if let error = mappingError ?? lastError { showMessage("Dock Switcher", error) }
     }
 
     @objc private func quit() { NSApp.terminate(nil) }
@@ -264,8 +307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 rebuildMenu()
             case .mapping:
                 rebuildMapping()
-                NSApp.activate(ignoringOtherApps: true)
-                mappingMenu.popUp(positioning: nil, at: NSPoint(x: 0, y: 0), in: statusItem.button)
+                presentMapping()
             case .settings:
                 presentMenu()
             }

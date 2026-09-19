@@ -6,9 +6,9 @@
 
 **Dock 里的应用，一键就到。 / Your Dock. One shortcut away.**
 
-**中文：** 按 **⌘1–⌘9、⌘0**，依次切换到 Dock 中固定的应用，跳过 Finder。原生 macOS 菜单栏 App 独立运行，Raycast 可选。
+**中文：** 按 **⌘1–⌘9、⌘0**，依次切换到 Dock 中的应用，跳过 Finder。默认只包含固定应用；勾选 **Include Running Apps** 可同时包含未固定的运行中应用。原生 macOS 菜单栏 App 独立运行，Raycast 可选。
 
-**English:** Press **⌘1–⌘9 or ⌘0** to switch to your pinned Dock apps in order, skipping Finder. This native menu bar app works independently; Raycast is optional.
+**English:** Press **⌘1–⌘9 or ⌘0** to switch to your Dock apps in order, skipping Finder. Only pinned apps are included by default; check **Include Running Apps** to include unpinned running apps too. This native menu bar app works independently; Raycast is optional.
 
 **macOS 13+ · Apple Silicon + Intel**
 
@@ -193,15 +193,23 @@ npm run dev
 
 **English:** Open **Current Mapping** and manually try `⌘1`; pause shortcuts and check that the original app shortcut returns. Test Dock reordering, quitting, and a later login as needed. A running process, a **Shortcuts are on** menu state, successful URL delivery, or working `--version` alone does not prove the real keyboard path works. Mark anything not actually tested as unverified.
 
-**中文：** 行为边界：只映射 Dock 固定应用，排除 Finder、文件夹、分隔项、最近应用和未固定的运行中应用；每次触发读取已保存顺序。全局拦截全部 10 组 Command 数字键，少于 10 个应用时空位无动作；因此会覆盖浏览器标签页快捷键。Shift、Option、Control 组合放行；仅用美式布局数字行的物理键位，不包括数字小键盘。
+**中文：** 增删或调整 Dock 应用顺序后，可在菜单栏选择 **Remap Dock Apps**，按当前选项立即刷新并展示映射。刷新不会启用或暂停快捷键，也不会修改 Dock；读取失败时显示错误。
 
-**English:** Behavior limits: only pinned Dock applications participate, excluding Finder, folders, spacers, recent apps, and unpinned running apps. Each shortcut reads the saved order. All ten Command-number shortcuts are globally intercepted, including empty positions when fewer than ten apps exist; this replaces shortcuts such as browser tab selection. Shift, Option, and Control combinations pass through. The mapping uses physical US-layout number-row keys, excluding the numeric keypad.
+**English:** After adding, removing, or reordering Dock apps, choose **Remap Dock Apps** in the menu bar to refresh and display the mapping using the current option. Refreshing does not enable or pause shortcuts or change the Dock; a read failure displays an error.
+
+**中文：** **Include Running Apps** 默认不勾选，只映射固定应用；选项会保存，重启 App 后仍然生效。勾选后，固定应用（包括已退出的应用）和未固定的运行中应用按 Dock 当前实际显示顺序共同参与映射。此模式通过辅助功能读取 Dock，即使快捷键已暂停，查看或刷新映射仍需要 **Dock Switcher** 的辅助功能权限。菜单和快捷键使用同一选项及映射规则。
+
+**English:** **Include Running Apps** is unchecked by default, mapping only pinned apps; the setting is saved across app restarts. When checked, pinned apps (including closed apps) and unpinned running apps share the mapping in their actual visible Dock order. This mode reads the Dock through Accessibility, so **Dock Switcher** needs Accessibility permission to view or refresh the mapping even while shortcuts are paused. Menus and shortcuts use the same setting and mapping rules.
+
+**中文：** 行为边界：两种模式都排除 Finder、文件夹、分隔项及已退出且未固定的最近应用；每次触发及打开菜单时都会重新读取映射。默认模式同步系统偏好设置以读取固定顺序，勾选上述选项后读取 Dock 实际顺序。全局拦截全部 10 组 Command 数字键，少于 10 个应用时空位无动作；因此会覆盖浏览器标签页快捷键。Shift、Option、Control 组合放行；仅用美式布局数字行的物理键位，不包括数字小键盘。
+
+**English:** Behavior limits: both modes exclude Finder, folders, spacers, and closed, unpinned recent apps. Each shortcut and menu opening rereads the mapping. The default mode synchronizes with system preferences for pinned order; enabling the option reads the actual Dock order. All ten Command-number shortcuts are globally intercepted, including empty positions when fewer than ten apps exist; this replaces shortcuts such as browser tab selection. Shift, Option, and Control combinations pass through. The mapping uses physical US-layout number-row keys, excluding the numeric keypad.
 
 | 问题 / Problem                                      | 处理 / Next step                                                                                                                                                                                                                                                                                                                                                |
 | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 下载或 checksum 失败 / Download or checksum failure | 停止安装；重新核对官方 release、所选文件名和唯一 checksum 条目。API 匿名限流时等待恢复，或从官方 Releases 页面下载，不索取或粘贴凭据。/ Stop installation; recheck the official release, selected filename, and unique checksum entry. If the anonymous API rate limit is reached, wait or use the official Releases page; do not request or paste credentials. |
 | App 无法打开 / App cannot open                      | 核对 macOS 版本、完整复制和签名校验；系统拦截交由用户处理。/ Check macOS version, complete copying, and signature verification; leave OS approval to the user.                                                                                                                                                                                                  |
-| 已启用但无切换 / Enabled without switching          | 核对辅助功能权限并重开菜单，查看菜单错误；确认对应位置有固定应用。/ Check Accessibility, reopen the menu, inspect its error, and confirm that the position contains a pinned app.                                                                                                                                                                               |
+| 已启用但无切换 / Enabled without switching          | 核对辅助功能权限并重开菜单，查看菜单错误；在 Current Mapping 中确认对应位置有应用。/ Check Accessibility, reopen the menu, inspect its error, and confirm that the position contains an app in Current Mapping.                                                                                                                                                 |
 | 登录启动待审批 / Login startup pending              | 在 App 打开的登录项设置中由用户批准，再回菜单核对。/ Let the user approve in Login Items settings opened by the app, then check the menu.                                                                                                                                                                                                                       |
 | Raycast 无法打开 App / Raycast cannot open the app  | 确认 App 已在 Applications 且至少打开过一次；检查 Allow Raycast Control。/ Confirm installation in Applications and one successful launch, then check Allow Raycast Control.                                                                                                                                                                                    |
 | 旧 helper 迁移失败 / Legacy migration failure       | 保留错误摘要，先解决旧服务停止问题，不同时启用两套监听。/ Keep an error summary and resolve stopping the old service before enabling another listener.                                                                                                                                                                                                          |

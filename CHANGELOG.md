@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add **Remap Dock Apps** to refresh and display the current shortcut mapping without changing whether shortcuts are enabled.
+- Add a persisted **Include Running Apps** checkbox, off by default. When enabled, map pinned apps and unpinned running apps in their actual Dock order through Accessibility; exclude Finder, non-app tiles, and closed unpinned recent apps.
+- Synchronize with macOS Dock preferences before reading the pinned app order for menus and shortcuts, instead of reading the on-disk plist directly.
+- Report mapping refresh failures and clear mapping errors after a successful refresh.
+
 ## 0.2.0
 
 - Run Dock Switcher as a standalone native macOS menu bar app, with no Raycast requirement.

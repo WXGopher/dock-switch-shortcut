@@ -6,6 +6,11 @@ struct DockApp: Equatable {
     let url: URL?
 }
 
+struct DockItem {
+    let app: DockApp
+    let isRunning: Bool
+}
+
 enum DockModel {
     static func apps(from preferences: Any) -> [DockApp] {
         guard let dictionary = preferences as? [String: Any],
@@ -25,13 +30,37 @@ enum DockModel {
         }
     }
 
-    static func read() throws -> [DockApp] {
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Preferences/com.apple.dock.plist")
-        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
-        let data = try Data(contentsOf: url)
-        let plist = try PropertyListSerialization.propertyList(from: data, format: nil)
-        return apps(from: plist)
+    static func apps(from items: [DockItem], pinnedApps: [DockApp]) -> [DockApp] {
+        let pinnedIDs = Set(pinnedApps.map(\.bundleID))
+        var seen = Set<String>()
+        return items.compactMap { item in
+            let app = item.app
+            guard app.bundleID != "com.apple.finder",
+                  item.isRunning || pinnedIDs.contains(app.bundleID),
+                  seen.insert(app.bundleID).inserted else { return nil }
+            return app
+        }
+    }
+
+    static func read(includeRunningApps: Bool = false, applicationID: CFString = "com.apple.dock" as CFString) throws -> [DockApp] {
+        let pinnedApps = try readPinnedApps(applicationID: applicationID)
+        guard includeRunningApps else { return pinnedApps }
+        return apps(from: try DockAccessibility.items(), pinnedApps: pinnedApps)
+    }
+
+    private static func readPinnedApps(applicationID: CFString) throws -> [DockApp] {
+        // Dock changes go through the preferences service. The on-disk plist can
+        // lag behind it, and this process may already have cached an older value.
+        guard CFPreferencesSynchronize(applicationID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost) else {
+            throw AppError("Could not refresh Dock preferences. Try Remap Dock Apps again.")
+        }
+        guard let value = CFPreferencesCopyValue(
+            "persistent-apps" as CFString, applicationID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost
+        ) else { return [] }
+        guard let tiles = value as? [Any] else {
+            throw AppError("The Dock app list could not be read. Try Remap Dock Apps again.")
+        }
+        return apps(from: ["persistent-apps": tiles])
     }
 }
 

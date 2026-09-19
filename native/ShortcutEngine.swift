@@ -4,6 +4,8 @@ final class ShortcutEngine {
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     var onFailure: ((String) -> Void)?
+    var onMappingFailure: ((String) -> Void)?
+    var includeRunningApps = false
 
     var isRunning: Bool {
         guard let tap else { return false }
@@ -58,13 +60,14 @@ final class ShortcutEngine {
     }
 
     private func activateApp(at index: Int) {
+        let includeRunningApps = self.includeRunningApps
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
-                let apps = try DockModel.read()
+                let apps = try DockModel.read(includeRunningApps: includeRunningApps)
                 guard apps.indices.contains(index) else { return }
                 let app = apps[index]
                 DispatchQueue.main.async { [weak self] in
-                    guard self?.isRunning == true else { return }
+                    guard self?.isRunning == true, self?.includeRunningApps == includeRunningApps else { return }
                     guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleID) ?? app.url else {
                         self?.onFailure?("Could not find \(app.name). Re-add it to your Dock.")
                         return
@@ -78,7 +81,10 @@ final class ShortcutEngine {
                     }
                 }
             } catch {
-                DispatchQueue.main.async { self?.onFailure?("Could not read Dock preferences: \(error.localizedDescription)") }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.isRunning, self.includeRunningApps == includeRunningApps else { return }
+                    self.onMappingFailure?(error.localizedDescription)
+                }
             }
         }
     }
