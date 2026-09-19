@@ -2,7 +2,7 @@ import Cocoa
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 if arguments == ["--version"] {
-    print("Dock Switcher 0.2.0")
+    print("Dock Switcher 0.3.0")
     exit(0)
 }
 if arguments == ["--help"] {
